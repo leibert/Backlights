@@ -1,9 +1,14 @@
 #include <ESP8266WiFi.h>
+#include <string.h>
+
 
 //SET WIFI ACCESS
 const char* ssid     = "SSID";
 const char* password = "3ng1n33rs_mans1on";
 
+
+char* CMDCTRLaddr;
+char* CMDCTRLhost;
 
 //define channel properties
 //CH# = Channel type (RGB, DIGital, DIMmer)
@@ -13,33 +18,64 @@ const char* password = "3ng1n33rs_mans1on";
 
 //Define IoS Node
 //description
-const char* desc = "2 RGB strip and PWM";
+const char* desc = "busbox";
 //# of devices
-const int numChannels = 3; //This is needed because C sucks. Should be 1 less than array size
+const int numChannels = 8; //This is needed because C sucks. Should be 1 less than array size
 
 
 //Channel Array Entry = {TYPE,IOa,IOb,IOc,STATEa,STATEb,STATEc,INVERTFLAG}
-//TYPE: 0=Switch,1=PWM, 3=RGB PWM
+//TYPE: 1=Switch,2=PWM, 3=RGB PWM
 //RGB uses a,b,c; otherwise only use a
 //Invertflag used if HIGH is off
 //STATE should be init 0, used to keep track of last values
 //First array entry Channel[0] should be all zeros. Channels start at Channel[1] to align with CHnum being passed to function
-int Channel[4][8] = {
-  {0, 0, 0, 0, 0, 0, 0, 0},
-  {3, 14, 12, 13, 0, 0, 0, 0},
-  {3, 4, 5, 16, 0, 0, 0, 0},
-  {0, 10, 0, 0, 0, 0, 0, 1}
-};
+static int Channel[(numChannels + 1)][8];
+static String Channeldesc[(numChannels + 1)];
+//static char ChannelState[6][3] = {
+//  {0,0,0},
+//  {0, 0, 0},
+//  {0, 0, 0},
+//  {0, 0, 0},
+//  {0, 0, 0}
+//  };
 
-const char* CH1desc = "Right Flood Light";
-const char* CH2desc = "Left Flood Light";
-const char* CH3desc = "Backyard Lights";
+int D89 = 0;
+int S89 = 0;
+int S101 = 0;
+int L80 = 0;
+int CFE = 0;
 
+int slow = 2000;
+int medium = 1000;
+int fast = 500;
+int sfast = 250;
+
+void initChannel(int CHID, int type, int pin1, int pin2, int pin3, int flag, String desc) {
+  Serial.println("initing " + String(CHID) + ": " + desc);
+  Channel[CHID][0] = (char)type;
+  Channel[CHID][1] = (char)pin1;
+  Channel[CHID][2] = (char)pin2;
+  Channel[CHID][3] = (char)pin3;
+  Channel[CHID][4] = (char)0;
+  Channel[CHID][5] = (char)0;
+  Channel[CHID][6] = (char)0;
+  Channel[CHID][7] = (char)flag;
+  Channeldesc[CHID] = desc;
+
+}
+
+
+//const String CH1desc = "Tall light";
+//const String CH2desc = "R Arrow";
+//const String CH3desc = "L Arrow";
+//const String CH4desc = "Empty";
+//const String CH5desc = "L Red";
+//const String CH6desc = "M Amber";
+//const String CH7desc = "R Red";
+//const String CH8desc = "Empty";
 
 //configure ESP
 int BLULED = 2; //ESP BLUE LED FOR DEBUGGING
-
-
 
 
 
@@ -48,9 +84,19 @@ int BLULED = 2; //ESP BLUE LED FOR DEBUGGING
 int mSec = 0;
 int seconds = 0;
 int minutes = 0;
+bool minuteFLAG = false;
+bool pausebusbotFLAG = false;
+int busbotTOUT = 0;
 
 int timeoutperiod = 120; //timeout in seconds to turn off light, no timeout if 0
 
+//timer
+int MCLKmsec, MCLKsec, MCLKminutes, MCLKhours;
+int TMRmsec, TMRsec, TMRminutes, TMRhours;
+
+int minutehold;
+
+String SIGNcontent;
 
 //setup for command processing
 int chnum;
@@ -131,14 +177,15 @@ void RGBFade(int chnum, int R, int G, int B) {
 
 
 void switchON(int chnum) {
-  Serial.println("Switch ON");
+  //  Serial.println("ON");
+  //  Serial.println(chnum);
   if (Channel[chnum][0] < 3) {
-    if (Channel[chnum][7] == 1){
-//      analogWrite(Channel[chnum][1], 0);
+    if (Channel[chnum][7] == 1) {
+      //      analogWrite(Channel[chnum][1], 0);
       digitalWrite(Channel[chnum][1], LOW);
-      }
-    else{
-//      analogWrite(Channel[chnum][1], 255);
+    }
+    else {
+      //      analogWrite(Channel[chnum][1], 255);
       digitalWrite(Channel[chnum][1], HIGH);
     }
     Channel[chnum][4] = 100;
@@ -169,18 +216,20 @@ void switchON(int chnum) {
 
 
 void switchOFF(int chnum) {
-  Serial.println("Switch off");
-  Serial.println(chnum);
-  Serial.println(Channel[chnum][0]);
-  Serial.println(Channel[chnum][7]);
-  
-   if (Channel[chnum][0] < 3) {
-    if (Channel[chnum][7] == 1){
-//      analogWrite(Channel[chnum][1], 255);
+  //  Serial.println("OFF");
+  //  Serial.println(chnum);
+  //  Serial.println("SWITCHOFF" + chnum);
+  //  Serial.println(Channel[chnum][0]);
+  //  Serial.println(Channel[chnum][5]);
+
+  if (Channel[chnum][0] < 3) {
+    if (Channel[chnum][7] == 1) {
+      //      analogWrite(Channel[chnum][1], 255);
       digitalWrite(Channel[chnum][1], HIGH);
-      }
-    else{
-//      analogWrite(Channel[chnum][1], 0);
+    }
+
+    else {
+      //      analogWrite(Channel[chnum][1], 0);
       digitalWrite(Channel[chnum][1], LOW);
     }
     Channel[chnum][4] = 0;
@@ -232,7 +281,7 @@ void ChannelTOGGLE(int chnum) { //Toggle Channel from OFF to ON (or ON to OFF)
     }
   }
   else if (Channel[chnum][0] == 3) {  //RGB Channel, sum values and round to tell if its mostly on or off
-    if ((Channel[chnum][4] + Channel[chnum][5] + Channel[chnum][6]) < 90) //Mostly off, turn on all pins
+    if ((Channel[chnum][4] + Channel[chnum][5] + Channel[chnum][6]) < 150) //Mostly off, turn on all pins
       switchON(chnum);  //turn channel on
     else //otherwise turn off channel
       switchOFF(chnum); //turn channel off
@@ -243,7 +292,7 @@ void ChannelTOGGLE(int chnum) { //Toggle Channel from OFF to ON (or ON to OFF)
 //Dim all outputs on Channel
 void ChannelDIM(int chnum, int value) {
   switch (Channel[chnum][0]) {//check type of channel
-    case 0: //Digital IO, turn on and off
+    case 1: //Digital IO, turn on and off
       {
         if (value > 50) //if value more than 50%
           switchON(chnum); //turn channel full on
@@ -251,7 +300,7 @@ void ChannelDIM(int chnum, int value) {
           switchOFF(chnum); //otherwise turn off
       }
 
-    case 1: //Single Channel PWMable. Convert to Analog Write and set pin
+    case 2: //Single Channel PWMable. Convert to Analog Write and set pin
       {
         int PWMval = (1024 * (value / 100.0));
         Serial.println("single PWM MODE");
@@ -386,13 +435,15 @@ void initLamp() {
 
 void initChannelIO() { //iterate through Channel Array and setup all pins
   for (int i = 1; i <= numChannels; i++) {
+    Serial.println("init ch" + String(i));
     switch (Channel[i][0]) {
       case 3:
         {
+          Serial.println("PWM Channel");
           pinMode(Channel[i][1], OUTPUT);
           pinMode(Channel[i][2], OUTPUT);
           pinMode(Channel[i][3], OUTPUT);
-          if (Channel[i][7] == 1) {
+          if (Channel[i][5] == 1) {
             digitalWrite(Channel[i][1], HIGH);
             digitalWrite(Channel[i][2], HIGH);
             digitalWrite(Channel[i][3], HIGH);
@@ -409,38 +460,21 @@ void initChannelIO() { //iterate through Channel Array and setup all pins
         break;
 
       default: //Digital IO and PWM
-        pinMode(Channel[i][1], OUTPUT);
-        if (Channel[i][7] == 1)
-          digitalWrite(Channel[i][1], HIGH);
-        else
-          digitalWrite(Channel[i][1], LOW);
-        Channel[i][4] = 0;
+        {
+          Serial.println("single channel");
+          pinMode(Channel[i][1], OUTPUT);
+          if (Channel[i][5] == 1)
+            digitalWrite(Channel[i][1], HIGH);
+          else
+            digitalWrite(Channel[i][1], LOW);
+          Channel[i][4] = 0;
+        }
+        break;
 
     }
   }
 }
 
-///////////
-////SETUP ARDUINO ON POWERUP
-//////////
-void setup() {
-  Serial.begin(115200); //Start debug serial
-  delay(10); //wait, because things break otherwise
-
-  analogWriteFreq(2700); //Set PWM clock, some ESPs seem fuckered about this
-
-  //Set IO for BLUE DEBUG LIGHT
-  pinMode(BLULED, OUTPUT);
-  digitalWrite(BLULED, HIGH);
-
-  initChannelIO();
-
-
-  startWIFI();//Connect to WIFI network and start server
-
-  //  initLamp();//Test lights on startup
-
-}
 
 ///////
 //Functions to perform HTTP communication with web interface and the IoSMaster
@@ -477,17 +511,24 @@ String reportstatus() {
   responsestring.concat("\"channels\":[");
 
   for (int i = 1; i <= numChannels; i++) {
+    Serial.println("CHTYPE:" + Channel[i][0]);
+
+    if (Channel[i][0] == 0) //If there is no type assume its an empty channel
+      continue;
+    if (i > 1) //to correctly form json there needs to be a comma between elements, start on i=2
+      responsestring.concat(",");
+
     responsestring.concat("{");
     responsestring.concat(responsebuilder("CH", String(i)) + ",");
-    responsestring.concat(responsebuilder("CHdesc", CH1desc) + ",");
+    responsestring.concat(responsebuilder("CHdesc", Channeldesc[i]) + ",");
     switch (Channel[i][0]) {
-      case 0:
+      case 1:
         {
           responsestring.concat(responsebuilder("type", "DIGITAL") + ",");
           responsestring.concat(responsebuilder("CHVAL", String(Channel[i][4])));
         }
         break;
-      case 1:
+      case 2:
         {
           responsestring.concat(responsebuilder("type", "PWM") + ",");
           responsestring.concat(responsebuilder("CHVAL", String(Channel[i][4])));
@@ -501,12 +542,12 @@ String reportstatus() {
           responsestring.concat(responsebuilder("BVAL", String(Channel[i][6])));
         }
         break;
-    }
-    if (i<numChannels)
-      responsestring.concat("},");
-    else
-      responsestring.concat("}");
+      default:
+        responsestring.concat(responsebuilder("type", "UNKNW"));
+        break;
 
+    }
+    responsestring.concat("}");
   }
 
 
@@ -525,22 +566,464 @@ String reportstatus() {
 
 
 
-void loop() {
 
+void ticker() {
+  //  Serial.println("delay length");
+  //  delay(incr);
+  MCLKmsec += 10;
+  TMRmsec += 10;
+  //  Serial.println("TICK" + TMRmsec)
+
+  if (MCLKmsec % 1000 == 0) {
+    //    MCLKmsec = 0;
+    MCLKsec++;
+    //    Serial.println(MCLKsec);
+    //    secondFLAG = false;
+  }
+  if (MCLKsec > 60) {
+    MCLKsec = 0;
+    MCLKminutes++;
+    minuteFLAG = false;
+  }
+  if (MCLKminutes > 60) {
+    MCLKminutes = 0;
+    MCLKhours++;
+  }
+
+
+}
+
+
+///////////
+////SETUP ARDUINO ON POWERUP
+//////////
+void setup() {
+
+
+
+
+  Serial.begin(115200); //Start debug serial
+  delay(10); //wait, because things break otherwise
+
+  Serial.println("SERIAL OUTPUT ACTIVE");
+
+  //  initChannelArray(6);
+  initChannel(1, 1, 16, 0, 0, 1, "Arrow R");
+  initChannel(2, 1, 5, 0, 0, 0, "Arrow L");
+  initChannel(3, 1, 4, 0, 0, 1, "Red R");
+  initChannel(4, 1, 0, 0, 0, 0, "Amber");
+  initChannel(5, 1, 2, 0, 0, 1, "Red L");
+  initChannel(6, 1, 14, 0, 0, 0, "Tall Light");
+  initChannel(7, 1, 12, 0, 0, 1, "Empty");
+  initChannel(8, 1, 13, 0, 0, 0, "Amber L");
+
+  initChannelIO();
+
+  BLACKOUT();
+
+
+  startWIFI();//Connect to WIFI network and start server
+
+  //Set IO for BLUE DEBUG LIGHT
+  pinMode(BLULED, OUTPUT);
+  digitalWrite(BLULED, HIGH);
+
+  analogWriteFreq(2700); //Set PWM clock, some ESPs seem fuckered about this
+
+  //  wdt_disable();
+
+  MCLKmsec = 0;
+  MCLKsec = 0;
+  MCLKminutes = 0;
+  MCLKhours = 0;
+
+  TMRmsec = 0;
+  TMRsec = 0;
+  TMRminutes = 0;
+  TMRhours = 0;
+
+  CMDCTRLhost = "192.168.0.31";
+  CMDCTRLaddr = "/espserve/CMDCTRL/buses.cmd";
+
+  updateCMD();
+  Serial.println("ESP INIT COMPLETED");
+
+  //  initLamp();//Test lights on startup
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//////SPECIFIC TO BUS BOX
+void updateCMDfile() {
+  char* host = CMDCTRLhost;
+  char* url = CMDCTRLaddr;
+  Serial.println("localtion is" + String(CMDCTRLaddr));
+
+
+
+
+  const int httpPort = 80;
+  if (!client.connect(host, httpPort)) {
+    Serial.println("connection failed");
+    return;
+  }
+
+  // This will send the request to the server
+  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+               "Host: " + host + "\r\n" +
+               "Connection: close\r\n\r\n");
+  unsigned long timeout = millis();
+  while (client.available() == 0) {
+    if (millis() - timeout > 5000) {
+      Serial.println(">>> Client Timeout !");
+      client.stop();
+      return;
+    }
+  }
+
+  SIGNcontent = "";
+
+  // Read all the lines of the reply from server and print them to Serial
+  while (client.available()) {
+    //    Serial.print("asciR");
+    String line = client.readStringUntil('\r');
+    Serial.print(line);
+    SIGNcontent += line;
+  }
+
+  Serial.println();
+  Serial.println("closing connection");
+
+}
+
+
+
+void updatebuses() {
+  Serial.println("BUSES");
+  int index;
+  Serial.println("BUSES2");
+  index = SIGNcontent.indexOf("CFE:");
+  CFE = SIGNcontent.substring((index + 4), (index + 7)).toInt();
+  Serial.println(CFE);
+
+  Serial.println("S89");
+  index = SIGNcontent.indexOf("S89:");
+  S89 = SIGNcontent.substring((index + 4), (index + 7)).toInt();
+  Serial.println(S89);
+
+  Serial.println("S101");
+  index = SIGNcontent.indexOf("S101:");
+  S101 = SIGNcontent.substring((index + 5), (index + 8)).toInt();
+  Serial.println(S101);
+
+  Serial.println("D89");
+  index = SIGNcontent.indexOf("D89:");
+  D89 = SIGNcontent.substring((index + 4), (index + 7)).toInt();
+  Serial.println(D89);
+
+  Serial.println("L80");
+  index = SIGNcontent.indexOf("L80:");
+  L80 = SIGNcontent.substring((index + 4), (index + 7)).toInt();
+  Serial.println(L80);
+
+
+  //  CFE = atoi(SIGNcontent.substring(strstr(SIGNcontent, "CFE:"),2));
+  //  serial.println(CFE);
+  //  D89 = atoi(SIGNcontent.substring(strstr(SIGNcontent, "D89:"),2));
+  //  serial.println(D89);
+  //  S89 = atoi(SIGNcontent.substring(strstr(SIGNcontent, "S89:"),2));
+  //  serial.println(S89);
+  //  S101 = atoi(SIGNcontent.substring(strstr(SIGNcontent, "S101:"),2));
+  //  serial.println(S101);
+
+}
+
+
+
+
+
+void updateCMD() {
+  updateCMDfile();
+  updatebuses();
+  pausebusbotFLAG = false;
+}
+
+void lightbot() {
+
+  //check coffee
+  if (CFE > 0) {
+    if (CFE < 15) {
+      if (MCLKmsec % fast == 0 && MCLKmsec > 0) {
+        ChannelTOGGLE(6);
+      }
+    }
+    else if (CFE < 45) {
+      if (MCLKmsec % medium == 0 && MCLKmsec > 0) {
+        ChannelTOGGLE(6);
+      }
+    }
+    else if (CFE < 90) {
+      if (MCLKmsec % slow == 0 && MCLKmsec > 0) {
+        ChannelTOGGLE(6);
+      }
+
+
+    }
+  }
+  else {
+    //    Serial.println("COFFEE OFF");
+    switchOFF(6);
+  }
+
+  //  turn off arrows
+  //  switchOFF(1);
+  //  switchOFF(2);
+
+  //turn off route lights
+  switchOFF(3);
+  switchOFF(4);
+  switchOFF(5);
+
+
+  if (MCLKsec < 15) { //Davis 89
+    switchON(4);
+    switchOFF(2);
+    if (D89 > 0) {
+      if (D89 < 6) {
+        if (MCLKmsec % sfast == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(1);
+      }
+      else if (D89 < 11) {
+        if (MCLKmsec % fast == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(1);
+      }
+      else if (D89 < 16) {
+        if (MCLKmsec % medium == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(1);
+      }
+      else if (D89 < 31) {
+        if (MCLKmsec % slow == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(1);
+      }
+      else {
+        switchOFF(2);
+        switchOFF(1);
+      }
+    }
+    else {
+      switchOFF(2);
+      switchOFF(1);
+    }
+
+
+
+  }
+  else if (MCLKsec < 30) { //Sulivan 89
+    switchON(4);
+    switchOFF(1);
+    if (S89 > 0) {
+      if (S89 < 6) {
+        if (MCLKmsec % sfast == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (S89 < 11) {
+        if (MCLKmsec % fast == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (S89 < 16) {
+        if (MCLKmsec % medium == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (S89 < 31) {
+        if (MCLKmsec % slow == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else {
+        switchOFF(1);
+        switchOFF(2);
+      }
+    }
+    else {
+      switchOFF(1);
+      switchOFF(2);
+    }
+
+  }
+  else if (MCLKsec < 45) { //Sullivan 101
+    switchON(5);
+    switchOFF(1);
+    if (S101 > 0) {
+      if (S101 < 6) {
+        if (MCLKmsec % sfast == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (S101 < 11) {
+        if (MCLKmsec % fast == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (S101 < 16) {
+        if (MCLKmsec % medium == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (S101 < 31) {
+        if (MCLKmsec % slow == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else {
+        switchOFF(1);
+        switchOFF(2);
+      }
+    }
+    else {
+      switchOFF(1);
+      switchOFF(2);
+    }
+  }
+  else {            //Lechmere 80
+    switchON(3);
+    switchOFF(1);
+    if (L80 > 0) {
+      if (L80 < 3) {
+        if (MCLKmsec % sfast == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (L80 < 6) {
+        if (MCLKmsec % fast == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (L80 < 11) {
+        if (MCLKmsec % medium == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else if (L80 < 25) {
+        if (MCLKmsec % slow == 0 && MCLKmsec > 0)
+          ChannelTOGGLE(2);
+      }
+      else {
+        switchOFF(1);
+        switchOFF(2);
+      }
+    }
+    else {
+      switchOFF(1);
+      switchOFF(2);
+    }
+  }
+
+}
+
+
+
+
+
+
+
+
+void pausebusbot(int TMOUT) {
+  TMRsec = 0;
+  //  BLACKOUT();
+  pausebusbotFLAG = true;
+  busbotTOUT = TMOUT;
+
+}
+
+void checkbusbotpause() {
+  if (TMRsec > busbotTOUT) {
+    pausebusbotFLAG = false;
+    BLACKOUT();
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void loop() {
+  //  Serial.println("loop");
+  //  wdt_disable();
   //if wifi connection has been lost, try to reconnect
+
   if (WiFi.status() != WL_CONNECTED) {
     delay(1);
     startWIFI();
     return;
   }
+  delay(10);
+  ticker();
 
   //  Serial.println("current time:");
   //  Serial.println("mSec:");
-  //  Serial.print(mSec);
+  //    Serial.print(mSec);
   //  Serial.println("seconds:");
   //  Serial.print(seconds);
   //  Serial.println("minutes:");
   //  Serial.print(minutes);
+
+  if (!pausebusbotFLAG) {
+    lightbot();
+    if (minutehold != MCLKminutes && !minuteFLAG) {
+      Serial.println("minute");
+      updateCMD();
+      minuteFLAG = true;
+    }
+  }
+
+
+
+
+
+
+
+
+  ////////////////////////////AFTER THIS ONLY RUNS IF CLIENT CONNECTED
+
 
   // Check if a client has connected
   WiFiClient client = server.available();
@@ -550,6 +1033,10 @@ void loop() {
 
   //someone must have connected
   Serial.println("new victim");
+
+  //pause botbot
+  pausebusbot(60);
+
 
 
   // Read the first line of the request
@@ -599,6 +1086,11 @@ void loop() {
   }
   else if (action.indexOf("BLACKOUT") != -1) {
     BLACKOUT();
+  }
+  else if (action.indexOf("CMDLOAD") != -1) {
+    updateCMD();
+    pausebusbotFLAG = false;
+    return;
   }
 
   else if (action.indexOf("TOGGLE") != -1) {
@@ -673,7 +1165,7 @@ void loop() {
     Serial.println("");
   }
 
-  delay(500);
+  //  delay(500);
 }
 
 
