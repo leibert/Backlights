@@ -1,10 +1,11 @@
 #include <ESP8266WiFi.h>
 #include <string.h>
 
+//WIFI ssid and password in include file
+#include <passwords.h>
 
-//SET WIFI ACCESS
-const char* ssid     = "66ADAMS";
-const char* password = "3ng1n33rs_mans1on";
+
+
 
 
 char* CMDCTRLaddr;
@@ -44,6 +45,7 @@ int S89 = 0;
 int S101 = 0;
 int L80 = 0;
 int CFE = 0;
+String activeAlert="";
 
 int slow = 2000;
 int medium = 1000;
@@ -88,7 +90,7 @@ bool minuteFLAG = false;
 bool pausebusbotFLAG = false;
 int busbotTOUT = 0;
 
-int timeoutperiod = 120; //timeout in seconds to turn off light, no timeout if 0
+int timeoutperiod = 20; //timeout in minutes to turn off light, no timeout if 0
 
 //timer
 int MCLKmsec, MCLKsec, MCLKminutes, MCLKhours;
@@ -735,10 +737,18 @@ void updateCMDfile() {
 void updatebuses() {
   Serial.println("BUSES");
   int index;
-  Serial.println("BUSES2");
+ 
   index = SIGNcontent.indexOf("CFE:");
   CFE = SIGNcontent.substring((index + 4), (index + 7)).toInt();
   Serial.println(CFE);
+
+  index = SIGNcontent.indexOf("AFLAG:");
+//  Serial.println(index);
+  activeAlert = SIGNcontent.substring((index + 6), (index + 7));
+  Serial.println("Alert Type:");
+  Serial.println(activeAlert);
+  if (activeAlert >= "A")
+    BLACKOUT();
 
   Serial.println("S89");
   index = SIGNcontent.indexOf("S89:");
@@ -783,6 +793,90 @@ void updateCMD() {
 }
 
 void lightbot() {
+  if (activeAlert=="A"){
+      if (MCLKmsec % sfast == 0 && MCLKmsec > 0) {
+        if (Channel[6][4]==100){
+          switchOFF(1);
+          switchOFF(2);
+          switchOFF(6);
+          switchON(3);
+          switchON(4);
+          switchON(5);
+        }
+        else{
+          switchON(1);
+          switchON(2);
+          switchON(6);
+          switchOFF(3);
+          switchOFF(4);
+          switchOFF(5);
+        }
+      } 
+    return;
+  }
+  if (activeAlert=="B"){
+      if (MCLKmsec % fast == 0 && MCLKmsec > 0) {
+        if (Channel[6][4]==100){
+          switchOFF(1);
+          switchOFF(2);
+          switchOFF(6);
+          switchON(3);
+          switchON(4);
+          switchON(5);
+        }
+        else{
+          switchON(1);
+          switchON(2);
+          switchON(6);
+          switchOFF(3);
+          switchOFF(4);
+          switchOFF(5);
+        }
+      } 
+    return;
+  }
+    if (activeAlert=="C"){
+      if (MCLKmsec % medium == 0 && MCLKmsec > 0) {
+        if (Channel[6][4]==100){
+          switchOFF(1);
+          switchOFF(2);
+          switchOFF(6);
+          switchON(3);
+          switchON(4);
+          switchON(5);
+        }
+        else{
+          switchON(1);
+          switchON(2);
+          switchON(6);
+          switchOFF(3);
+          switchOFF(4);
+          switchOFF(5);
+        }
+      } 
+    return;
+  }
+    if (activeAlert=="D"){
+      if (MCLKmsec % slow == 0 && MCLKmsec > 0) {
+        if (Channel[6][4]==100){
+          switchOFF(1);
+          switchOFF(2);
+          switchOFF(6);
+          switchON(3);
+          switchON(4);
+          switchON(5);
+        }
+        else{
+          switchON(1);
+          switchON(2);
+          switchON(6);
+          switchOFF(3);
+          switchOFF(4);
+          switchOFF(5);
+        }
+      } 
+    return;
+  }  
 
   //check coffee
   if (CFE > 0) {
@@ -1034,8 +1128,6 @@ void loop() {
   //someone must have connected
   Serial.println("new victim");
 
-  //pause botbot
-  pausebusbot(60);
 
 
 
@@ -1126,6 +1218,10 @@ void loop() {
 
   else if (action.indexOf("DIM") != -1) {
     ChannelDIM(chnum, value.toInt());
+  }
+  else if (action.indexOf("PAUSEBUSBOT") != -1) {
+    //pause botbot
+    pausebusbot(60);
   }
 
   else {

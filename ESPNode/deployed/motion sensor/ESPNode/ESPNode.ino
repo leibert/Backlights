@@ -12,13 +12,13 @@
 
 //Define IoS Node
 //description
-const char* desc = "Backyard Lights Controller A";
+const char* desc = "Motion test";
 //# of devices
-const int numChannels = 3; //This is needed because C sucks. Should be 1 less than array size
+const int numChannels = 2; //This is needed because C sucks. Should be 1 less than array size
 
 
 //Channel Array Entry = {TYPE,IOa,IOb,IOc,STATEa,STATEb,STATEc,INVERTFLAG}
-//TYPE: 1=Switch,2=PWM, 3=RGB PWM
+//TYPE: 1=Switch,2=PWM, 3=RGB PWM, 11=Digital Input
 //RGB uses a,b,c; otherwise only use a
 //Invertflag used if HIGH is off
 //STATE should be init 0, used to keep track of last values
@@ -33,18 +33,19 @@ static String Channeldesc[(numChannels + 1)];
 //  {0, 0, 0}
 //  };
 
-
+boolean inputflag=false;
 
 void initChannel(int CHID, int type, int pin1, int pin2, int pin3, int flag, String desc) {
+  Serial.println("in init");
   Serial.println("initing " + String(CHID) + ": " + desc);
-  Channel[CHID][0] = (char)type;
-  Channel[CHID][1] = (char)pin1;
-  Channel[CHID][2] = (char)pin2;
-  Channel[CHID][3] = (char)pin3;
-  Channel[CHID][4] = (char)0;
-  Channel[CHID][5] = (char)0;
-  Channel[CHID][6] = (char)0;
-  Channel[CHID][7] = (char)flag;
+  Channel[CHID][0] = type;
+  Channel[CHID][1] = pin1;
+  Channel[CHID][2] = pin2;
+  Channel[CHID][3] = pin3;
+  Channel[CHID][4] = 0;
+  Channel[CHID][5] = 0;
+  Channel[CHID][6] = 0;
+  Channel[CHID][7] = flag;
   Channeldesc[CHID] = desc;
 
 }
@@ -411,13 +412,23 @@ void initChannelIO() { //iterate through Channel Array and setup all pins
   for (int i = 1; i <= numChannels; i++) {
     Serial.println("init ch" + String(i));
     switch (Channel[i][0]) {
+      case 11:
+        {
+            Serial.println("digital input");
+            if (Channel[i][7] == 1)
+              pinMode(Channel[i][1], INPUT_PULLUP);   //set pin to input pullup
+            else
+              pinMode(Channel[i][1], INPUT);           // set pin to input
+            Channel[i][4] = 0;
+        }
+        break;
       case 3:
         {
           Serial.println("PWM Channel");
           pinMode(Channel[i][1], OUTPUT);
           pinMode(Channel[i][2], OUTPUT);
           pinMode(Channel[i][3], OUTPUT);
-          if (Channel[i][5] == 1) {
+          if (Channel[i][7] == 1) {
             digitalWrite(Channel[i][1], HIGH);
             digitalWrite(Channel[i][2], HIGH);
             digitalWrite(Channel[i][3], HIGH);
@@ -437,7 +448,7 @@ void initChannelIO() { //iterate through Channel Array and setup all pins
         {
           Serial.println("single channel");
           pinMode(Channel[i][1], OUTPUT);
-          if (Channel[i][5] == 1)
+          if (Channel[i][7] == 1)
             digitalWrite(Channel[i][1], HIGH);
           else
             digitalWrite(Channel[i][1], LOW);
@@ -568,6 +579,29 @@ void ticker() {
 }
 
 
+void checkInputs(){
+  for (int i = 1; i <= numChannels; i++) {
+    if(Channel[i][0]>10){
+      switch(Channel[i][0]){
+        case 11:
+        {
+          if(digitalRead(Channel[i][1])!=Channel[i][4]){
+              Serial.println("PIN CHANGE");
+              Serial.println(Channel[i][1]);
+              Serial.println(digitalRead(Channel[i][1]));
+              Channel[i][4]=digitalRead(Channel[i][1]);
+              
+            
+          }
+        }
+        break;
+        
+      }
+    }
+  }
+}
+
+
 ///////////
 ////SETUP ARDUINO ON POWERUP
 //////////
@@ -579,12 +613,18 @@ void setup() {
   Serial.begin(115200); //Start debug serial
   delay(10); //wait, because things break otherwise
 
-  Serial.println("SERIAL OUTPUT ACTIVE");
+  Serial.println("\nSERIAL OUTPUT ACTIVE\n\n");
+  delay(10); //wait, because things break otherwise
 
   //  initChannelArray(6);
-  initChannel(1, 3, 16, 4, 5, 0, "Right Flood");
-  initChannel(2, 3, 16, 4, 5, 0, "Left Flood");
-  initChannel(3, 1, 16, 4, 5, 0, "Incandescent Strings");
+//  initChannel(1, 3, 1, 3, 15, 0, "Right");
+//  initChannel(3, 1, 10, 0, 0, 1, "Incandescent String");
+//  initChannel(2, 3, 14, 12, 13, 0, "Right Flood");
+  initChannel(2, 11, 9, 0, 0, 0, "MOTION");
+  initChannel(1, 1, 2, 0, 0, 1, "LED");
+
+
+
 
   initChannelIO();
 
@@ -663,6 +703,7 @@ void loop() {
   }
   delay(10);
   ticker();
+  checkInputs();
 
   //  Serial.println("current time:");
   //  Serial.println("mSec:");

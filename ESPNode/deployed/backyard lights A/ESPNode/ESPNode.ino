@@ -12,7 +12,7 @@
 
 //Define IoS Node
 //description
-const char* desc = "Backyard Lights Controller A";
+const char* desc = "Backyard Lights";
 //# of devices
 const int numChannels = 3; //This is needed because C sucks. Should be 1 less than array size
 
@@ -36,15 +36,16 @@ static String Channeldesc[(numChannels + 1)];
 
 
 void initChannel(int CHID, int type, int pin1, int pin2, int pin3, int flag, String desc) {
+  Serial.println("in init");
   Serial.println("initing " + String(CHID) + ": " + desc);
-  Channel[CHID][0] = (char)type;
-  Channel[CHID][1] = (char)pin1;
-  Channel[CHID][2] = (char)pin2;
-  Channel[CHID][3] = (char)pin3;
-  Channel[CHID][4] = (char)0;
-  Channel[CHID][5] = (char)0;
-  Channel[CHID][6] = (char)0;
-  Channel[CHID][7] = (char)flag;
+  Channel[CHID][0] = type;
+  Channel[CHID][1] = pin1;
+  Channel[CHID][2] = pin2;
+  Channel[CHID][3] = pin3;
+  Channel[CHID][4] = 0;
+  Channel[CHID][5] = 0;
+  Channel[CHID][6] = 0;
+  Channel[CHID][7] = flag;
   Channeldesc[CHID] = desc;
 
 }
@@ -579,12 +580,16 @@ void setup() {
   Serial.begin(115200); //Start debug serial
   delay(10); //wait, because things break otherwise
 
-  Serial.println("SERIAL OUTPUT ACTIVE");
+  Serial.println("\nSERIAL OUTPUT ACTIVE\n\n");
+  delay(10); //wait, because things break otherwise
 
   //  initChannelArray(6);
-  initChannel(1, 3, 16, 4, 5, 0, "Right Flood");
-  initChannel(2, 3, 16, 4, 5, 0, "Left Flood");
-  initChannel(3, 1, 16, 4, 5, 0, "Incandescent Strings");
+//  initChannel(1, 3, 1, 3, 15, 0, "Right");
+  initChannel(3, 1, 10, 0, 0, 1, "Incandescent String");
+  initChannel(2, 3, 14, 12, 13, 0, "Right Flood");
+  initChannel(1, 3, 4, 5, 16, 0, "Left Flood");
+
+
 
   initChannelIO();
 
